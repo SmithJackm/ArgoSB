@@ -1,35 +1,48 @@
 #!/bin/sh
 export LANG=en_US.UTF-8
+
+# 检查是否已有agsb/s进程在运行，如果没有，则检查协议变量
 if ! find /proc/*/exe -type l 2>/dev/null | grep -E '/proc/[0-9]+/exe' | xargs -r readlink 2>/dev/null | grep -q 'agsb/s' && ! pgrep -f 'agsb/s' >/dev/null 2>&1; then
 [ -z "${vlpt+x}" ] || vlp=yes
 [ -z "${vmpt+x}" ] || vmp=yes
 [ -z "${hypt+x}" ] || hyp=yes
 [ -z "${tupt+x}" ] || tup=yes
-[ "$vlp" = yes ] || [ "$vmp" = yes ] || [ "$hyp" = yes ] || [ "$tup" = yes ] || { echo "提示：使用此脚本时，请在脚本前至少设置一个协议变量哦，再见！"; exit; }
+[ -z "${anpt+x}" ] || anp=yes # 新增AnyTLS协议开关
+[ -z "${xhpt+x}" ] || xhp=yes # 新增Xhttp协议开关
+[ "$vlp" = yes ] || [ "$vmp" = yes ] || [ "$hyp" = yes ] || [ "$tup" = yes ] || [ "$anp" = yes ] || [ "$xhp" = yes ] || { echo "提示：使用此脚本时，请在脚本前至少设置一个协议变量哦，再见！"; exit; }
 fi
+
+# 环境变量设置
 export uuid=${uuid:-''}
 export port_vl_re=${vlpt:-''}
 export port_vm_ws=${vmpt:-''}
 export port_hy2=${hypt:-''}
 export port_tu=${tupt:-''}
+export port_an=${anpt:-''} # 新增AnyTLS端口变量
+export port_xh=${xhpt:-''} # 新增Xhttp端口变量
 export ym_vl_re=${reym:-''}
 export argo=${argo:-''}
 export ARGO_DOMAIN=${agn:-''}
 export ARGO_AUTH=${agk:-''}
 export ipsw=${ip:-''}
+
+# 显示帮助信息
 showmode(){
 echo "显示节点信息：agsb或者脚本 list"
 echo "双栈VPS显示IPv4节点配置：ip=4 agsb或者脚本 list"
 echo "双栈VPS显示IPv6节点配置：ip=6 agsb或者脚本 list"
 echo "卸载脚本：agsb或者脚本 del"
 }
+
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
 echo "甬哥Github项目 ：github.com/yonggekkk"
 echo "甬哥Blogger博客 ：ygkkk.blogspot.com"
 echo "甬哥YouTube频道 ：www.youtube.com/@ygkkk"
-echo "ArgoSB一键无交互脚本"
-echo "当前版本：25.6.18"
+echo "ArgoSB一键无交互脚本 (已修改以支持AnyTLS和Xhttp)"
+echo "当前版本：25.6.18-mod"
 echo "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+
+# 系统信息检测
 hostname=$(uname -a | awk '{print $2}')
 op=$(cat /etc/redhat-release 2>/dev/null || cat /etc/os-release 2>/dev/null | grep -i pretty_name | cut -d \" -f2)
 [ -z "$(systemd-detect-virt 2>/dev/null)" ] && vi=$(virt-what 2>/dev/null) || vi=$(systemd-detect-virt 2>/dev/null)
@@ -39,17 +52,24 @@ x86_64) cpu=amd64;;
 *) echo "目前脚本不支持$(uname -m)架构" && exit
 esac
 mkdir -p "$HOME/agsb"
+
+# WARP状态检测
 warpcheck(){
 wgcfv6=$(curl -s6m5 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
 wgcfv4=$(curl -s4m5 https://www.cloudflare.com/cdn-cgi/trace -k | grep warp | cut -d= -f2)
 }
+
+# 安装函数
 ins(){
+# 安装sing-box核心
 if [ ! -e "$HOME/agsb/sing-box" ]; then
 curl -Lo "$HOME/agsb/sing-box" -# --retry 2 https://github.com/yonggekkk/ArgoSB/releases/download/argosbx/sing-box-$cpu
 chmod +x "$HOME/agsb/sing-box"
 sbcore=$("$HOME/agsb/sing-box" version 2>/dev/null | awk '/version/{print $NF}')
 echo "已安装Sing-box正式版内核：$sbcore"
 fi
+
+# 生成配置文件头部
 cat > "$HOME/agsb/sb.json" <<EOF
 {
 "log": {
@@ -59,6 +79,8 @@ cat > "$HOME/agsb/sb.json" <<EOF
   },
   "inbounds": [
 EOF
+
+# 生成UUID和证书
 if [ -z "$uuid" ]; then
 uuid=$("$HOME/agsb/sing-box" generate uuid)
 fi
@@ -70,6 +92,8 @@ if [ ! -f "$HOME/agsb/private.key" ]; then
 curl -Lso "$HOME/agsb/private.key" https://github.com/yonggekkk/ArgoSB/releases/download/argosbx/private.key
 curl -Lso "$HOME/agsb/cert.pem" https://github.com/yonggekkk/ArgoSB/releases/download/argosbx/cert.pem
 fi
+
+# VLESS Reality协议配置
 if [ -n "$vlp" ]; then
 vlp=vlpt
 if [ -z "$port_vl_re" ]; then
@@ -124,6 +148,8 @@ EOF
 else
 vlp=vlptargo
 fi
+
+# VMess WS协议配置
 if [ -n "$vmp" ]; then
 vmp=vmpt
 if [ -z "$port_vm_ws" ]; then
@@ -145,7 +171,7 @@ cat >> "$HOME/agsb/sb.json" <<EOF
         ],
         "transport": {
             "type": "ws",
-            "path": "${uuid}-vm",
+            "path": "/${uuid}-vm",
             "max_early_data":2048,
             "early_data_header_name": "Sec-WebSocket-Protocol"
         },
@@ -160,6 +186,8 @@ EOF
 else
 vmp=vmptargo
 fi
+
+# Hysteria2协议配置
 if [ -n "$hyp" ]; then
 hyp=hypt
 if [ -z "$port_hy2" ]; then
@@ -192,6 +220,8 @@ EOF
 else
 hyp=hyptargo
 fi
+
+# TUIC协议配置
 if [ -n "$tup" ]; then
 tup=tupt
 if [ -z "$port_tu" ]; then
@@ -225,13 +255,15 @@ EOF
 else
 tup=tuptargo
 fi
+
+# --- 新增AnyTLS协议配置 ---
 if [ -n "$anp" ]; then
 anp=anpt
 if [ -z "$port_an" ]; then
 port_an=$(shuf -i 10000-65535 -n 1)
 fi
 echo "$port_an" > "$HOME/agsb/port_an"
-echo "Anytls端口：$port_tu"
+echo "Anytls端口：$port_an"
 cat >> "$HOME/agsb/sb.json" <<EOF
         {
             "type":"anytls",
@@ -243,9 +275,9 @@ cat >> "$HOME/agsb/sb.json" <<EOF
                   "password":"${uuid}"
                 }
             ],
-            "padding_scheme":[],
             "tls":{
                 "enabled": true,
+                "server_name": "www.bing.com",
                 "certificate_path": "$HOME/agsb/cert.pem",
                 "key_path": "$HOME/agsb/private.key"
             }
@@ -254,6 +286,35 @@ EOF
 else
 anp=anptargo
 fi
+
+# --- 新增Xhttp (HTTP Proxy) 协议配置 ---
+if [ -n "$xhp" ]; then
+xhp=xhpt
+if [ -z "$port_xh" ]; then
+port_xh=$(shuf -i 10000-65535 -n 1)
+fi
+echo "$port_xh" > "$HOME/agsb/port_xh"
+echo "Xhttp (HTTP Proxy) 端口：$port_xh"
+cat >> "$HOME/agsb/sb.json" <<EOF
+        {
+            "type": "http",
+            "tag": "xhttp-sb",
+            "listen": "::",
+            "listen_port": ${port_xh},
+            "users": [
+                {
+                    "username": "user",
+                    "password": "${uuid}"
+                }
+            ]
+        },
+EOF
+else
+xhp=xhptargo
+fi
+
+
+# 移除最后一个逗号并完成配置文件
 sed -i '${s/,\s*$//}' "$HOME/agsb/sb.json"
 cat >> "$HOME/agsb/sb.json" <<EOF
 ],
@@ -265,7 +326,11 @@ cat >> "$HOME/agsb/sb.json" <<EOF
 ]
 }
 EOF
+
+# 启动sing-box服务
 nohup "$HOME/agsb/sing-box" run -c "$HOME/agsb/sb.json" >/dev/null 2>&1 &
+
+# Argo隧道配置
 if [ -n "$argo" ]; then
 if [ ! -e "$HOME/agsb/cloudflared" ]; then
 argocore=$(curl -Ls https://data.jsdelivr.com/v1/package/gh/cloudflare/cloudflared | grep -Eo '"[0-9.]+"' | sed -n 1p | tr -d '",')
@@ -296,10 +361,12 @@ echo "Argo$name隧道申请失败，请稍后再试"
 fi
 fi
 
+# 设置快捷命令和开机自启
 if find /proc/*/exe -type l 2>/dev/null | grep -E '/proc/[0-9]+/exe' | xargs -r readlink 2>/dev/null | grep -q 'agsb/s' || pgrep -f 'agsb/s' >/dev/null 2>&1 ; then
 [ -f ~/.bashrc ] || touch ~/.bashrc
 sed -i '/yonggekkk/d' ~/.bashrc
-echo "if ! find /proc/*/exe -type l 2>/dev/null | grep -E '/proc/[0-9]+/exe' | xargs -r readlink 2>/dev/null | grep -q 'agsb/s' && ! pgrep -f 'agsb/s' >/dev/null 2>&1; then export ip=\"${ipsw}\" argo=\"${argo}\" uuid=\"${uuid}\" $vlp=\"${port_vl_re}\" $vmp=\"${port_vm_ws}\" $hyp=\"${port_hy2}\" $tup=\"${port_tu}\" reym=\"${ym_vl_re}\" agn=\"${ARGO_DOMAIN}\" agk=\"${ARGO_AUTH}\"; sh <(curl -Ls https://raw.githubusercontent.com/yonggekkk/argosb/main/argosb.sh); fi" >> ~/.bashrc
+# --- 更新快捷命令以包含新协议 ---
+echo "if ! find /proc/*/exe -type l 2>/dev/null | grep -E '/proc/[0-9]+/exe' | xargs -r readlink 2>/dev/null | grep -q 'agsb/s' && ! pgrep -f 'agsb/s' >/dev/null 2>&1; then export ip=\"${ipsw}\" argo=\"${argo}\" uuid=\"${uuid}\" $vlp=\"${port_vl_re}\" $vmp=\"${port_vm_ws}\" $hyp=\"${port_hy2}\" $tup=\"${port_tu}\" $anp=\"${port_an}\" $xhp=\"${port_xh}\" reym=\"${ym_vl_re}\" agn=\"${ARGO_DOMAIN}\" agk=\"${ARGO_AUTH}\"; sh <(curl -Ls https://raw.githubusercontent.com/yonggekkk/argosb/main/argosb.sh); fi" >> ~/.bashrc
 COMMAND="agsb"
 SCRIPT_PATH="$HOME/bin/$COMMAND"
 mkdir -p "$HOME/bin"
@@ -327,6 +394,8 @@ else
 echo "ArgoSB脚本进程未启动，安装失败" && exit
 fi
 }
+
+# 显示节点信息函数
 cip(){
 ipbest(){
 serip=$(curl -s4m5 icanhazip.com -k || curl -s6m5 icanhazip.com -k)
@@ -390,6 +459,8 @@ echo "---------------------------------------------------------"
 echo "---------------------------------------------------------"
 echo "ArgoSB脚本输出节点配置如下："
 echo
+
+# 显示VLESS节点信息
 if [ -f "$HOME/agsb/port_vl_re" ]; then
 echo "【 vless-reality-vision 】节点信息如下："
 port_vl_re=$(cat "$HOME/agsb/port_vl_re")
@@ -402,6 +473,8 @@ echo "$vl_link" >> "$HOME/agsb/jh.txt"
 echo "$vl_link"
 echo
 fi
+
+# 显示VMess节点信息
 if [ -f "$HOME/agsb/port_vm_ws" ]; then
 echo "【 vmess-ws 】节点信息如下："
 port_vm_ws=$(cat "$HOME/agsb/port_vm_ws")
@@ -410,6 +483,8 @@ echo "$vm_link" >> "$HOME/agsb/jh.txt"
 echo "$vm_link"
 echo
 fi
+
+# 显示Hysteria2节点信息
 if [ -f "$HOME/agsb/port_hy2" ]; then
 echo "【 Hysteria2 】节点信息如下："
 port_hy2=$(cat "$HOME/agsb/port_hy2")
@@ -418,6 +493,8 @@ echo "$hy2_link" >> "$HOME/agsb/jh.txt"
 echo "$hy2_link"
 echo
 fi
+
+# 显示TUIC节点信息
 if [ -f "$HOME/agsb/port_tu" ]; then
 echo "【 Tuic 】节点信息如下："
 port_tu=$(cat "$HOME/agsb/port_tu")
@@ -426,6 +503,29 @@ echo "$tuic5_link" >> "$HOME/agsb/jh.txt"
 echo "$tuic5_link"
 echo
 fi
+
+# --- 新增显示AnyTLS节点信息 ---
+if [ -f "$HOME/agsb/port_an" ]; then
+echo "【 Anytls 】节点信息如下："
+port_an=$(cat "$HOME/agsb/port_an")
+anytls_info="协议: Anytls\n地址: $server_ip\n端口: $port_an\n密码: $uuid\nTLS: enabled\nSNI: www.bing.com\n(Anytls没有标准链接格式，请手动填入客户端)"
+echo -e "$anytls_info"
+echo -e "\n$anytls_info" >> "$HOME/agsb/jh.txt"
+echo
+fi
+
+# --- 新增显示Xhttp节点信息 ---
+if [ -f "$HOME/agsb/port_xh" ]; then
+echo "【 Xhttp (HTTP Proxy) 】节点信息如下："
+port_xh=$(cat "$HOME/agsb/port_xh")
+xhttp_info="协议: HTTP Proxy\n地址: $server_ip\n端口: $port_xh\n用户名: user\n密码: $uuid"
+echo -e "$xhttp_info"
+echo -e "\n$xhttp_info" >> "$HOME/agsb/jh.txt"
+echo
+fi
+
+
+# 显示Argo隧道节点信息
 argodomain=$(cat "$HOME/agsb/sbargoym.log" 2>/dev/null)
 [ -z "$argodomain" ] && argodomain=$(grep -a trycloudflare.com "$HOME/agsb/argo.log" 2>/dev/null | awk 'NR==2{print}' | awk -F// '{print $2}' | awk '{print $1}')
 if [ -n "$argodomain" ]; then
@@ -472,6 +572,8 @@ echo "---------------------------------------------------------"
 echo
 }
 
+# 脚本主逻辑
+# 参数处理：del（卸载）或 list（显示节点）
 if [ "$1" = "del" ]; then
 for P in /proc/[0-9]*; do if [ -L "$P/exe" ]; then TARGET=$(readlink -f "$P/exe" 2>/dev/null); if echo "$TARGET" | grep -qE '/agsb/c|/agsb/s'; then PID=$(basename "$P"); kill "$PID" 2>/dev/null && echo "Killed $PID ($TARGET)" || echo "Could not kill $PID ($TARGET)"; fi; fi; done
 kill -15 $(pgrep -f 'agsb/s' 2>/dev/null) $(pgrep -f 'agsb/c' 2>/dev/null) >/dev/null 2>&1
@@ -505,6 +607,7 @@ cip
 exit
 fi
 
+# 如果未安装，则执行安装流程
 if ! find /proc/*/exe -type l 2>/dev/null | grep -E '/proc/[0-9]+/exe' | xargs -r readlink 2>/dev/null | grep -q 'agsb/s' && ! pgrep -f 'agsb/s' >/dev/null 2>&1; then
 for P in /proc/[0-9]*; do if [ -L "$P/exe" ]; then TARGET=$(readlink -f "$P/exe" 2>/dev/null); if echo "$TARGET" | grep -qE '/agsb/c|/agsb/s'; then PID=$(basename "$P"); kill "$PID" 2>/dev/null && echo "Killed $PID ($TARGET)" || echo "Could not kill $PID ($TARGET)"; fi; fi; done
 kill -15 $(pgrep -f 'agsb/s' 2>/dev/null) $(pgrep -f 'agsb/c' 2>/dev/null) >/dev/null 2>&1
